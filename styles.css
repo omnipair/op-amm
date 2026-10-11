@@ -188,7 +188,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 4px 0; m
   gap: 14px;
   min-width: 0;
 }
-.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: end; }
+.control.clock { margin-left: auto; justify-items: end; text-align: right; }
 .control { display: grid; gap: 4px; min-width: 0; }
 .control label, .control .lab { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
 .control.grow { flex: 1 1 220px; }
