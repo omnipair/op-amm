@@ -57,6 +57,16 @@ Then open http://localhost:8000.
 node scripts/verify.js
 ```
 
+## Preview image
+
+`og.png` is the 1200 × 630 card that link previews use. Its source is `scripts/og-card.html`, which draws an hour of the live panel's simulated market with the page's own fonts and colors. To regenerate it after a design change:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --use-mock-keychain --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 --virtual-time-budget=10000 --user-data-dir="$(mktemp -d)" --screenshot="$PWD/og.png" "file://$PWD/scripts/og-card.html"
+```
+
+Chrome writes the file within a few seconds. If it doesn't exit afterwards, stop it with Ctrl+C.
+
 ## Deploy on Vercel
 
 The site is static. Import the repository in Vercel and choose the **Other** framework preset with no build command; Vercel serves the repository root. From the CLI:
@@ -78,3 +88,5 @@ vercel --prod
 | `sandwich.js` | Oracle-update sandwich panel |
 | `backtest.js` | Backtest rerun |
 | `scripts/verify.js` | Checks against the paper's numbers |
+| `og.png` | Link-preview image |
+| `scripts/og-card.html` | Source for `og.png` |
