@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oracle Dial</title>
+<meta name="description" content="Interactive companion to Amini and Feinstein's paper on oracle-parametrized AMMs: a live arbitrage simulation, the depth and LVR trade-off, an oracle-update sandwich, and a synthetic rerun of the SPY backtest.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2316181d'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='22' fill='%2398abe0'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&family=STIX+Two+Text:ital,wght@0,400..700;1,400..700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+  <header class="dial" aria-label="Oracle sensitivity">
+    <div class="wordmark">Oracle <span>Dial</span></div>
+    <div class="dial-track">
+      <input id="lam" type="range" min="0" max="0.99" step="0.01" value="0.6" aria-label="Oracle sensitivity lambda">
+      <div class="dial-ends"><span>0 · prices from its reserves</span><span>prices from the oracle · 1</span></div>
+    </div>
+    <div class="dial-value">
+      <span class="m">λ</span><span class="num" id="lam-out">0.60</span>
+      <div class="presets" role="group" aria-label="Preset sensitivities">
+        <button class="chip" data-lam="0" title="Plain constant-product AMM, no oracle">CPMM</button>
+        <button class="chip" data-lam="0.6" title="The paper's sandwich example (Remark 3.13)">0.60</button>
+        <button class="chip" data-lam="0.84" title="Near the pull-oracle optimum in the SPY backtest">0.84</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">arXiv:2609.33799 · Hamed Amini &amp; Zachary Feinstein · September 2026</div>
+      <p class="equation" aria-label="p equals lambda pi plus one minus lambda, times pi star">
+        p <span class="up">=</span> <span class="m-p">λ</span><span class="m-o">π</span> <span class="up">+ (1 −</span> <span class="m-p">λ</span><span class="up">)</span> π<sup class="up">*</sup>
+      </p>
+      <div class="equation-live">right now: quote = <b id="eq-a">0.60</b> × oracle price + <b id="eq-b">0.40</b> × the price the pool's reserves imply</div>
+      <p class="lede">An automated market maker normally prices only from its own reserves, so it trails the real market and pays arbitrageurs to catch up. This paper lets the pool read a price oracle too. It proves that any well-behaved oracle-priced pool quotes <strong>a weighted average of the oracle price and its own inventory price</strong>, then works out when leaning on the oracle pays. Turn the dial at the top. Every instrument below responds.</p>
+    </section>
+
+    <section class="instrument" id="live" aria-label="Live market simulation">
+      <div class="controls">
+        <div class="control"><span class="lab">Oracle</span>
+          <div class="seg" id="live-regime" role="group" aria-label="Oracle regime">
+            <button data-v="perfect" title="Reads the true mid every second">Perfect</button>
+            <button data-v="pull" title="Every second, 1 s delay">Pull</button>
+            <button data-v="l2" title="5 bps threshold, 1 h heartbeat, 2 s delay">L2</button>
+            <button data-v="l1" title="25 bps threshold, 1 h heartbeat, 60 s delay">L1</button>
+            <button data-v="noisy" title="Pull oracle plus mean-reverting error, 3 bps SD">Noisy</button>
+          </div>
+        </div>
+        <div class="control"><span class="lab">Pool fee</span>
+          <div class="seg" id="live-fee" role="group" aria-label="Pool fee">
+            <button data-v="1">1 bp</button><button data-v="5">5 bps</button><button data-v="30">30 bps</button>
+          </div>
+        </div>
+        <div class="control"><span class="lab">Speed</span>
+          <div class="seg" id="live-speed" role="group" aria-label="Simulation speed">
+            <button data-v="10">10×</button><button data-v="60">60×</button><button data-v="300">300×</button>
+          </div>
+        </div>
+        <button class="btn" id="live-play" type="button">Pause</button>
+        <div class="control"><span class="lab">Market clock</span><span class="num" id="live-clock">10:00:00 ET</span></div>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span class="key" style="color: var(--ink)"><i class="thin"></i><span class="lbl">Market mid</span></span>
+        <span class="key" style="color: var(--oracle)"><i></i><span class="lbl">Oracle</span></span>
+        <span class="key" style="color: var(--pool)"><i></i><span class="lbl">Oracle-priced pool at the dial's λ</span></span>
+        <span class="key" style="color: var(--cpmm)"><i class="dash"></i><span class="lbl">CPMM</span></span>
+        <span class="key" style="color: var(--loss)"><i class="pt"></i><span class="lbl">Arbitrage trade</span></span>
+      </div>
+      <div class="chart-wrap">
+        <canvas class="chart" id="live-chart" style="height: 430px" role="img" aria-label="Last 40 minutes: market price, oracle price, pool quotes, quote errors in basis points and cumulative losses to arbitrage"></canvas>
+      </div>
+      <div class="readouts six">
+        <div class="tile"><span class="lab">LP loss · oracle pool</span><span class="val pool" id="live-lvr-ga">–</span><span class="sub" id="live-lvr-ga-sub">per $1M a year</span></div>
+        <div class="tile"><span class="lab">LP loss · CPMM</span><span class="val cpmm" id="live-lvr-cp">–</span><span class="sub" id="live-lvr-cp-sub">per $1M a year</span></div>
+        <div class="tile"><span class="lab">Depth vs CPMM</span><span class="val" id="live-depth">–</span><span class="sub">same pool value, at the market price</span></div>
+        <div class="tile"><span class="lab">Tracking error</span><span class="val" id="live-te">–</span><span class="sub" id="live-te-sub">RMS quote error, bps</span></div>
+        <div class="tile"><span class="lab">Arbitrage trades</span><span class="val" id="live-trades">–</span><span class="sub">oracle pool / CPMM, today</span></div>
+        <div class="tile"><span class="lab">Oracle updates</span><span class="val" id="live-upd">–</span><span class="sub">today</span></div>
+      </div>
+      <p class="note">Synthetic SPY-like session, not market data: one-second steps, 13% annual volatility, a one-cent spread. Each second, arbitrageurs trade whenever the pool's fee-adjusted quote crosses the market, which is how the paper runs its backtest. Losses are annualized from today's session so far.</p>
+    </section>
+
+    <section class="plate" id="interp">
+      <div class="reading">
+        <div class="eyebrow">§2.2 Theorem 2.8 · §2.3 Example 2.11</div>
+        <h2>Every oracle-priced pool is a weighted average</h2>
+        <p>The pool has two anchors. The <strong>oracle price <span class="m m-o">π</span></strong> comes from outside. The <strong>inventory price <span class="m">π*</span></strong> comes from the reserves alone: it is the quote at which pool and oracle would agree.</p>
+        <p>The paper proves that if the quote never passes on the whole of an oracle move, it always sits between the two anchors, a share <span class="m m-p">λ</span> of the way toward the oracle. Drag either anchor.</p>
+        <div class="formula"><span>p = <span class="m-p">λ</span> <span class="m-o">π</span> <span class="up">+ (1 −</span> <span class="m-p">λ</span><span class="up">)</span> π*</span><span class="tag">Theorem 2.8</span></div>
+        <p>Leaning on the oracle also concentrates liquidity. With a correct oracle, depth at the market price is <strong>1/(1 − λ)</strong> times a CPMM of the same value. When the oracle is wrong, depth at the true price falls away, and past a break-even error the pool ends up shallower than the CPMM.</p>
+      </div>
+      <div class="instrument">
+        <div class="chart-title"><span>Drag <span class="m m-o">π</span> or <span class="m">π*</span></span><span id="interp-read"></span></div>
+        <canvas class="chart" id="interp-chart" style="height: 150px; touch-action: none" role="img" aria-label="Number line with the inventory price, the oracle price and the quote between them"></canvas>
+        <div class="chart-title"><span>Depth vs an equal-value CPMM, by oracle error</span><b id="depth-be"></b></div>
+        <canvas class="chart" id="depth-chart" style="height: 250px" role="img" aria-label="Relative depth falling as oracle error grows"></canvas>
+      </div>
+    </section>
+
+    <section class="plate" id="tradeoff">
+      <div class="reading">
+        <div class="eyebrow">§3.1 Corollary 3.4 · §4.1 Figure 1</div>
+        <h2>Trading lag risk for oracle risk</h2>
+        <p>Liquidity providers lose to arbitrageurs whenever the quote is stale. The paper's loss-versus-rebalancing (LVR) formula splits that loss into two parts: the market move the quote misses, weighted by <span class="m">(1 − λ)²</span>, and the oracle's own error, weighted by <span class="m">λ²</span>.</p>
+        <div class="formula"><span>ℓ / V <span class="up">=</span> <span class="up">⅛ ·</span> depth <span class="up">·</span> [(1 − <span class="m-p">λ</span>)² σ² + <span class="m-p">λ</span>² σ<sub>η</sub>²]</span><span class="tag">Remark 3.2</span></div>
+        <p>Each step toward the oracle trims lag but imports noise, and the extra depth amplifies whatever is left. With noise ratio <span class="m">α = σ<sub>η</sub>/σ</span>, the pool beats a CPMM in the same state only while <strong>λ &lt; 1/(1 + α²)</strong>.</p>
+        <p>The left chart traces λ from 0 to 0.99. The shaded corner is where the pool is deeper and also loses less.</p>
+      </div>
+      <div class="instrument">
+        <div class="controls">
+          <div class="control grow"><label for="alpha">Oracle noise <span class="m">α</span></label><input id="alpha" type="range" min="0" max="3" step="0.05" value="0.5"><output id="alpha-out" for="alpha">0.50</output></div>
+          <div class="control grow"><label for="kmis">Current oracle error <span class="m">k</span></label><input id="kmis" type="range" min="0" max="3" step="0.1" value="1"><output id="kmis-out" for="kmis">1.0</output></div>
+        </div>
+        <div class="chart-title"><span>Residual variance, as a share of the market's</span><span id="var-read"></span></div>
+        <canvas class="chart" id="var-chart" style="height: 92px" role="img" aria-label="Stacked bars of lag and oracle-noise variance"></canvas>
+        <div class="two">
+          <div class="chart-wrap"><div class="chart-title"><span>Depth vs loss, λ from 0 to 0.99</span><span>gray: α = 0, 0.5, 1, 2</span></div><canvas class="chart" id="frontier-chart" style="height: 300px" role="img" aria-label="Relative depth against relative LVR as lambda varies"></canvas></div>
+          <div class="chart-wrap"><div class="chart-title"><span>Where the pool beats the CPMM on both</span></div><canvas class="chart" id="dom-chart" style="height: 300px" role="img" aria-label="Map of lambda and alpha where the pool dominates"></canvas></div>
+        </div>
+        <div class="readouts">
+          <div class="tile"><span class="lab">Depth vs CPMM</span><span class="val" id="to-depth">–</span></div>
+          <div class="tile"><span class="lab">LVR vs CPMM</span><span class="val" id="to-lvr">–</span></div>
+          <div class="tile"><span class="lab">Verdict at the dial's <span class="m">λ</span></span><span class="val" id="to-verdict" style="font-size: 15px">–</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="plate" id="sandwich">
+      <div class="reading">
+        <div class="eyebrow">§3.2.1 Proposition 3.11 · Remark 3.13 · Lemma 3.14</div>
+        <h2>Sandwiching an oracle update</h2>
+        <p>A push oracle posts each update as its own transaction. An attacker can buy just before the update, on the stale curve, and sell just after, on the refreshed curve at the higher price.</p>
+        <p>The pool starts with 1 unit of each asset at a price of 1, so it is worth 2. The oracle then jumps from 0 to <span class="m">Δπ</span>. In the paper's example (λ = 0.6, Δπ = 0.5), plain arbitrage after the update takes 2.7% of the pool. Draining the risky reserve first takes 25.6%.</p>
+        <p>The price-tracking design (λ = 1) is worse: its curve never touches the axes, so the take keeps rising toward the whole pool as the front-run grows.</p>
+        <p>A fee on each leg closes the gap. Once <strong>λ·Δπ ≤ −log(1 − γ)</strong>, front-running adds nothing, and the update itself offers no arbitrage.</p>
+      </div>
+      <div class="instrument">
+        <div class="controls">
+          <div class="control"><span class="lab">Design</span>
+            <div class="seg" id="sw-design" role="group" aria-label="Pool design">
+              <button data-v="ga">GA · λ from dial</button><button data-v="pt">PT · λ = 1</button>
+            </div>
+          </div>
+          <button class="btn primary" id="sw-play" type="button">Play the attack</button>
+        </div>
+        <div class="controls">
+          <div class="control grow"><label for="sw-jump">Oracle jump <span class="m">Δπ</span></label><input id="sw-jump" type="range" min="0" max="1000" step="1" value="1000"><output id="sw-jump-out" for="sw-jump"></output></div>
+          <div class="control grow"><label for="sw-fee">Fee <span class="m">γ</span></label><input id="sw-fee" type="range" min="0" max="1000" step="1" value="0"><output id="sw-fee-out" for="sw-fee"></output></div>
+          <div class="control grow"><label for="sw-f">Front-run: share of risky reserve bought</label><input id="sw-f" type="range" min="0" max="1" step="0.01" value="1"><output id="sw-f-out" for="sw-f"></output></div>
+        </div>
+        <div class="two">
+          <div class="chart-wrap"><div class="chart-title"><span>Reserves: risky <span class="m">x</span> vs cash <span class="m">y</span></span></div><canvas class="chart" id="sw-curves" style="height: 300px" role="img" aria-label="Stale and refreshed trading curves with the attack path"></canvas>
+            <div class="legend" aria-hidden="true" style="margin-top: 8px">
+              <span class="key" style="color: var(--oracle)"><i></i><span class="lbl">Stale curve</span></span>
+              <span class="key" style="color: var(--pool)"><i></i><span class="lbl">Refreshed curve</span></span>
+              <span class="key" style="color: var(--loss)"><i></i><span class="lbl">Attack path</span></span>
+              <span class="key" style="color: var(--ink-3)"><i class="dash"></i><span class="lbl">Honest arbitrage</span></span>
+            </div>
+          </div>
+          <div class="chart-wrap"><div class="chart-title"><span>Attacker's take by front-run size</span></div><canvas class="chart" id="sw-profit" style="height: 300px" role="img" aria-label="Attack value against front-run size"></canvas></div>
+        </div>
+        <div class="readouts">
+          <div class="tile"><span class="lab">Attacker's take</span><span class="val loss" id="sw-take">–</span><span class="sub" id="sw-take-sub"></span></div>
+          <div class="tile"><span class="lab">Arbitrage, no front-run</span><span class="val" id="sw-honest">–</span><span class="sub">share of pool value</span></div>
+          <div class="tile"><span class="lab">Fee that neutralizes it</span><span class="val" id="sw-need">–</span><span class="sub" id="sw-need-sub"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="plate wide" id="backtest">
+      <div class="reading">
+        <div class="eyebrow">§4.2 S&amp;P 500 case study · Figures 2 and 3</div>
+        <h2>What a year of SPY quotes says</h2>
+        <p>The authors replay every second of SPY's 2023 national best bid and offer against a simulated tokenized-SPY pool. Arbitrageurs are the only traders, each day starts fresh at the open, and they sweep λ from 0 to 0.99 and fees from 0 to 50 bps under three oracle setups.</p>
+      </div>
+      <div class="regimes">
+        <article class="regime">
+          <h3>L1 oracle</h3>
+          <dl><dt>Heartbeat</dt><dd>1 hour</dd><dt>Threshold</dt><dd>25 bps</dd><dt>Delay</dt><dd>60 s</dd></dl>
+          <p>A slow base chain. It needs defensive settings, high fees and low λ. The plain CPMM stays the best design until more than 11 bps of tracking error is acceptable.</p>
+        </article>
+        <article class="regime">
+          <h3>L2 oracle</h3>
+          <dl><dt>Heartbeat</dt><dd>1 hour</dd><dt>Threshold</dt><dd>5 bps</dd><dt>Delay</dt><dd>2 s</dd></dl>
+          <p>A faster layer 2. Reliable enough that leaning on the oracle cuts arbitrage losses instead of feeding them.</p>
+        </article>
+        <article class="regime">
+          <h3>Pull oracle</h3>
+          <dl><dt>Heartbeat</dt><dd>1 second</dd><dt>Threshold</dt><dd>0</dd><dt>Delay</dt><dd>1 s</dd></dl>
+          <p>Read on demand. At about 7.5 bps of tracking error and λ ≈ 0.84, losses fall to roughly 0.001 bps a year, about $0.10 on a $1M position.</p>
+        </article>
+      </div>
+      <p class="note">Paper findings above. For a fixed loss budget, available depth grows by orders of magnitude as the oracle gets more reliable. In every regime, measured depth stayed within 0.22% of the 1/(1 − λ) multiplier. The best fee kept landing on the 50 bps edge of the grid, which the authors attribute to having no ordinary traders in the simulation, not to an optimal fee.</p>
+      <div class="instrument">
+        <div class="controls">
+          <div class="control"><span class="lab">Fee for the left chart</span>
+            <div class="seg" id="bt-fee" role="group" aria-label="Fee">
+              <button data-v="0">0</button><button data-v="1">1</button><button data-v="2">2</button><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="50">50 bps</button>
+            </div>
+          </div>
+          <button class="btn primary" id="bt-run" type="button">Re-run on 3 new days</button>
+          <span class="note" id="bt-status"></span>
+        </div>
+        <div class="progress" aria-hidden="true"><i id="bt-progress"></i></div>
+        <div class="legend" aria-hidden="true">
+          <span class="key" style="color: var(--loss)"><i></i><span class="lbl">L1</span></span>
+          <span class="key" style="color: var(--oracle)"><i></i><span class="lbl">L2</span></span>
+          <span class="key" style="color: var(--pool)"><i></i><span class="lbl">Pull</span></span>
+          <span class="key" style="color: var(--ink-3)"><i class="dash"></i><span class="lbl" id="bt-cpmm-key">CPMM (λ = 0)</span></span>
+          <span class="key" style="color: var(--ink-3)"><i class="thin"></i><span class="lbl">Dial λ</span></span>
+        </div>
+        <div class="two">
+          <div class="chart-wrap"><div class="chart-title"><span>LP loss to arbitrage by λ</span><span>annualized bps, log scale</span></div><canvas class="chart" id="bt-lvr" style="height: 300px" role="img" aria-label="Annualized LVR by lambda for each oracle regime"></canvas></div>
+          <div class="chart-wrap"><div class="chart-title"><span>Lowest loss for a tracking-error budget</span><span>best over λ and fee</span></div><canvas class="chart" id="bt-frontier" style="height: 300px" role="img" aria-label="Lowest annualized LVR achievable at each tracking-error allowance, per oracle regime"></canvas></div>
+        </div>
+        <p class="note">This rerun uses synthetic one-second days with SPY-like volatility, not the paper's data, and the paper's update rules, arbitrage rule and metrics. Expect the same shape, not the same numbers.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Source: Hamed Amini and Zachary Feinstein, <a href="https://arxiv.org/abs/2609.33799">Oracle-Parametrized Constant Function Market Makers: From Price Feeds to Pricing Rules</a>, arXiv:2609.33799 (2026). Pools here use the paper's geometric-average design on a constant-product baseline.</p>
+    <p>Findings attributed to the paper are quoted from it. Everything else is computed in your browser from the paper's formulas, and every simulated market on this page is synthetic.</p>
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script src="core.js"></script>
+<script src="hero.js"></script>
+<script src="plates.js"></script>
+<script src="sandwich.js"></script>
+<script src="backtest.js"></script>
+</body>
+</html>
